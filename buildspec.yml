@@ -1,0 +1,51 @@
+version: 0.2
+
+phases:
+  install:
+    runtime-versions:
+      python: 3.10
+    commands:
+      - echo "Installing app dependencies..."
+      - curl -LO https://amazon-eks.s3.us-west-2.amazonaws.com/1.18.9/2020-11-02/bin/linux/amd64/kubectl
+      - chmod +x kubectl
+      - mkdir -p $HOME/bin && mv kubectl $HOME/bin/kubectl
+      - echo 'export PATH=$HOME/bin:$PATH' >> $HOME/.bashrc
+      - export PATH=$HOME/bin:$PATH
+      - echo 'Check kubectl version'
+      - kubectl version --short --client
+      - pwd
+      - ls -la
+      - echo "Current working directory:$(pwd)"
+      - apt-get update
+      - apt-get install -y awscli
+  pre_build:
+    commands:
+      - echo Logging in to Amazon ECR...
+      - export LC_ALL="en_US.utf8"
+      - aws ecr-public get-login-password --region us-east-1 | docker login --username AWS --password-stdin public.ecr.aws/g0z6e9p3/write-metrics
+      - echo Logging in to Amazon EKS...
+      - aws eks --region us-east-1 update-kubeconfig --name IIT-EKS-DeveloperIQ
+      - echo check config
+      - kubectl config view --minify
+      - cat ~/.kube/config
+      - echo "Check kubectl get pods"
+      - kubectl get pods
+      - echo check kubectl access
+      - kubectl get svc
+  build:
+    commands:
+      - echo Build started on `date`
+      - echo Building the Docker image for your-app...
+      - docker build -t write-metrics:latest .
+      - docker tag write-metrics:latest public.ecr.aws/g0z6e9p3/write-metrics:latest
+
+  post_build:
+    commands:
+      - echo Build completed on `date`
+      - echo Pushing the Docker image...
+      - docker push public.ecr.aws/g0z6e9p3/write-metrics:latest
+      - echo Configuring kubectl with EKS...
+      - aws eks --region us-east-1 update-kubeconfig --name IIT-EKS-DeveloperIQ
+      - echo Deploying to EKS...
+      - kubectl apply -f k8s-deployment.yaml
+      - kubectl rollout restart -f k8s-deployment.yaml
